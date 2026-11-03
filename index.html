@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="es" data-version="2">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Mapa de ruta</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<style>
+  :root { --rojo: #c62828; --fondo: #ffffff; --texto: #1d1d1f; --suave: #6b6b70; --linea: #e3e3e6; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+               color: var(--texto); background: var(--fondo); }
+  #app { display: flex; flex-direction: column; height: 100%; }
+  header { padding: 10px 14px; border-bottom: 1px solid var(--linea); display: flex; align-items: center;
+           justify-content: space-between; gap: 8px; }
+  header h1 { font-size: 17px; margin: 0; }
+  header small { color: var(--suave); }
+  #mapa { flex: 1 1 55%; min-height: 200px; }
+  #lista { flex: 1 1 45%; overflow-y: auto; border-top: 1px solid var(--linea); }
+  .parada { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--linea); cursor: pointer; }
+  .parada:active { background: #f4f4f6; }
+  .num { flex: 0 0 30px; height: 30px; border-radius: 50%; background: var(--rojo); color: #fff;
+         display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
+  .info b { display: block; font-size: 14px; }
+  .info span { color: var(--suave); font-size: 12.5px; }
+  .pin { background: var(--rojo); color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px;
+         display: flex; align-items: center; justify-content: center; font: 700 12px system-ui, sans-serif;
+         box-shadow: 0 1px 4px rgba(0,0,0,.45); }
+  .ir { display: inline-block; margin-top: 6px; padding: 7px 12px; background: #1a73e8; color: #fff !important;
+        border-radius: 6px; text-decoration: none; font-weight: 600; }
+  button { font: inherit; border: 1px solid var(--linea); background: #fff; border-radius: 8px; padding: 6px 10px; }
+  #aviso { padding: 24px; text-align: center; color: var(--suave); }
+</style>
+</head>
+<body>
+<div id="app">
+  <header><div><h1 id="titulo">Mapa de ruta</h1><small id="sub"></small></div>
+    <button id="yo" type="button">📍 Dónde estoy</button></header>
+  <div id="mapa"></div>
+  <div id="lista"><div id="aviso">Cargando el mapa...</div></div>
+</div>
+<script>
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const b64u = s => b64(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function falla(msg) { document.getElementById("lista").innerHTML = '<div id="aviso">' + esc(msg) + "</div>"; }
+
+async function inflar(bytes) {
+  if (typeof DecompressionStream !== "undefined") {
+    const flujo = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"));
+    return new Response(flujo).text();
+  }
+  await new Promise((ok, mal) => {
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/pako@2.1.0/dist/pako_inflate.min.js";
+    s.integrity = "sha384-taEjHL+GUvC8IhXeCaTNUxz3O8ItsajGFLDFj4v/VJvM24HU36qP/6sRpuAGGfeT";
+    s.crossOrigin = "anonymous";
+    s.onload = ok; s.onerror = mal;
+    document.head.appendChild(s);
+  });
+  return pako.inflateRaw(bytes, { to: "string" });
+}
+
+async function cargar() {
+  const h = location.hash.slice(1);
+  if (h.startsWith("z=")) {
+    // link de la app del celular: el mapa va comprimido dentro del link (no se guarda en ningun servidor)
+    let d;
+    try {
+      d = JSON.parse(await inflar(b64u(h.slice(2))));
+    } catch (e) { return falla("El link no es correcto. Pide el link completo del mapa."); }
+    return pintar({ placa: d.p, fecha: d.f,
+      puntos: d.d.map(([s, n, dir, dis, vh, la, lo]) => ({ s, n, d: dir, di: dis, vh, la, lo })) });
+  }
+  // link de la app de la PC: el mapa esta cifrado en esta pagina y la clave va en el link
+  const id = new URLSearchParams(location.search).get("m");
+  const clave = h;
+  if (!id || !clave) return falla("El link está incompleto. Pide el link completo del mapa.");
+  const r = await fetch("m/" + encodeURIComponent(id) + ".json", { cache: "no-store" });
+  if (!r.ok) return falla("Este mapa todavía no está listo. Espera un minuto y vuelve a abrir el link.");
+  const sobre = await r.json();
+  const k = await crypto.subtle.importKey("raw", b64u(clave), "AES-GCM", false, ["decrypt"]);
+  let datos;
+  try {
+    const plano = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(sobre.iv) }, k, b64(sobre.ct));
+    datos = JSON.parse(new TextDecoder().decode(plano));
+  } catch (e) { return falla("El link no es correcto. Pide el link completo del mapa."); }
+  pintar(datos);
+}
+window.addEventListener("hashchange", () => location.reload());
+
+function pintar(d) {
+  document.title = "Ruta " + d.placa + " " + d.fecha;
+  document.getElementById("titulo").textContent = "Ruta " + d.placa;
+  document.getElementById("sub").textContent = d.fecha + " · " + d.puntos.length + " paradas";
+  const mapa = L.map("mapa", { zoomControl: true });
+  L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19,
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(mapa);
+  const marcas = [], lista = document.getElementById("lista");
+  lista.innerHTML = "";
+  d.puntos.forEach(p => {
+    const ir = "https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + p.la + "," + p.lo;
+    const html = "<b>" + p.s + " - " + esc(p.n) + "</b><br>" + esc(p.d) + (p.di ? " · " + esc(p.di) : "") +
+      (p.vh ? "<br>Horario: " + esc(p.vh) : "") + '<br><a class="ir" href="' + ir + '" target="_blank" rel="noopener">Cómo llegar</a>';
+    const m = L.marker([p.la, p.lo], { icon: L.divIcon({ className: "", html: '<div class="pin">' + p.s + "</div>",
+      iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12] }) }).bindPopup(html, { autoPanPaddingTopLeft: [56, 12], autoPanPaddingBottomRight: [12, 12], maxWidth: 280 }).addTo(mapa);
+    marcas.push(m);
+    const fila = document.createElement("div");
+    fila.className = "parada";
+    fila.innerHTML = '<div class="num">' + p.s + '</div><div class="info"><b>' + esc(p.n) + "</b><span>" +
+      esc(p.d) + (p.vh ? " · " + esc(p.vh) : "") + "</span></div>";
+    fila.onclick = () => { mapa.setView([p.la, p.lo], 17); m.openPopup(); };
+    lista.appendChild(fila);
+  });
+  if (marcas.length) mapa.fitBounds(L.featureGroup(marcas).getBounds(), { padding: [24, 24] });
+  let yo = null;
+  document.getElementById("yo").onclick = () => mapa.locate({ setView: true, maxZoom: 16 });
+  mapa.on("locationfound", e => { if (yo) yo.remove(); yo = L.circleMarker(e.latlng, { radius: 8, color: "#fff",
+    weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(mapa); });
+  mapa.on("locationerror", () => alert("No pude ver tu ubicación. Activa el GPS y dale permiso al navegador."));
+}
+cargar().catch(e => falla("No pude abrir el mapa: " + e.message));
+</script>
+</body>
+</html>
