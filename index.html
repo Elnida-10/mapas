@@ -1,54 +1,90 @@
 <!doctype html>
-<html lang="es" data-version="2">
+<html lang="es" data-version="3">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex, nofollow">
 <meta name="referrer" content="strict-origin-when-cross-origin">
-<title>Mapa de ruta</title>
+<title>Ruta del día</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 <style>
-  :root { --rojo: #c62828; --fondo: #ffffff; --texto: #1d1d1f; --suave: #6b6b70; --linea: #e3e3e6; }
+  /* Pensada para el chofer: letra grande, una parada a la vez y un botón que abre Google Maps. */
+  :root { --rojo: #c62828; --verde: #137333; --azul: #1a73e8; --gris: #9aa0a6; --fondo: #ffffff; --texto: #1d1d1f;
+          --suave: #5f6368; --linea: #dadce0; --amarillo: #fde293; }
   * { box-sizing: border-box; }
-  html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  html, body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
                color: var(--texto); background: var(--fondo); }
-  #app { display: flex; flex-direction: column; height: 100%; }
-  header { padding: 10px 14px; border-bottom: 1px solid var(--linea); display: flex; align-items: center;
-           justify-content: space-between; gap: 8px; }
-  header h1 { font-size: 17px; margin: 0; }
-  header small { color: var(--suave); }
-  #mapa { flex: 1 1 55%; min-height: 200px; }
-  #lista { flex: 1 1 45%; overflow-y: auto; border-top: 1px solid var(--linea); }
-  .parada { display: flex; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--linea); cursor: pointer; }
-  .parada:active { background: #f4f4f6; }
-  .num { flex: 0 0 30px; height: 30px; border-radius: 50%; background: var(--rojo); color: #fff;
-         display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; }
-  .info b { display: block; font-size: 14px; }
-  .info span { color: var(--suave); font-size: 12.5px; }
-  .pin { background: var(--rojo); color: #fff; border: 2px solid #fff; border-radius: 50%; width: 26px; height: 26px;
-         display: flex; align-items: center; justify-content: center; font: 700 12px system-ui, sans-serif;
+  body { padding-bottom: env(safe-area-inset-bottom); }
+  .cont { max-width: 720px; margin: 0 auto; }
+  header { padding: 12px 16px; border-bottom: 1px solid var(--linea); }
+  header h1 { font-size: 20px; margin: 0; }
+  header small { color: var(--suave); font-size: 15px; }
+  #actual { padding: 16px; }
+  .cuenta { font-size: 17px; font-weight: 700; color: var(--suave); letter-spacing: .03em; text-transform: uppercase; }
+  .nombre { font-size: 27px; font-weight: 800; line-height: 1.2; margin: 6px 0 4px; overflow-wrap: anywhere; }
+  .dir { font-size: 20px; line-height: 1.35; color: #3c4043; overflow-wrap: anywhere; }
+  .hora { display: inline-block; margin-top: 10px; background: var(--amarillo); border-radius: 10px; padding: 6px 12px;
+          font-size: 20px; font-weight: 800; }
+  .ir { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 16px; min-height: 72px;
+        background: var(--verde); color: #fff; border-radius: 16px; text-decoration: none; font-size: 24px; font-weight: 800;
+        box-shadow: 0 2px 6px rgba(0,0,0,.25); }
+  .ir:active { filter: brightness(.9); }
+  .pasos { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-top: 12px; }
+  .pasos button { min-height: 64px; border-radius: 14px; font: 800 21px system-ui, sans-serif; cursor: pointer; }
+  .ant { background: #fff; color: var(--texto); border: 2px solid var(--linea); }
+  .sig { background: var(--azul); color: #fff; border: 0; }
+  .pasos button:disabled { opacity: .4; }
+  .fin { margin-top: 16px; padding: 14px; border-radius: 12px; background: #e6f4ea; color: var(--verde); font-size: 21px;
+         font-weight: 800; text-align: center; }
+  .seccion { padding: 14px 16px 6px; font-size: 17px; font-weight: 800; border-top: 8px solid #f1f3f4;
+             display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .seccion button { font: 600 15px system-ui, sans-serif; border: 1px solid var(--linea); background: #fff;
+                    border-radius: 10px; padding: 8px 12px; cursor: pointer; }
+  #mapa { height: 46vh; min-height: 260px; }
+  .parada { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-bottom: 1px solid var(--linea);
+            cursor: pointer; }
+  .parada:active { background: #f1f3f4; }
+  .parada.hecha { opacity: .5; }
+  .parada.ahora { background: #e8f0fe; }
+  .num { flex: 0 0 38px; height: 38px; border-radius: 50%; background: var(--rojo); color: #fff;
+         display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 16px; }
+  .hecha .num { background: var(--gris); }
+  .ahora .num { background: var(--verde); }
+  .info { min-width: 0; }
+  .info b { display: block; font-size: 17px; }
+  .info span { color: var(--suave); font-size: 15px; }
+  .pin { background: var(--rojo); color: #fff; border: 2px solid #fff; border-radius: 50%; width: 28px; height: 28px;
+         display: flex; align-items: center; justify-content: center; font: 800 13px system-ui, sans-serif;
          box-shadow: 0 1px 4px rgba(0,0,0,.45); }
-  .ir { display: inline-block; margin-top: 6px; padding: 7px 12px; background: #1a73e8; color: #fff !important;
-        border-radius: 6px; text-decoration: none; font-weight: 600; }
-  button { font: inherit; border: 1px solid var(--linea); background: #fff; border-radius: 8px; padding: 6px 10px; }
-  #aviso { padding: 24px; text-align: center; color: var(--suave); }
+  .pin.hecha { background: var(--gris); }
+  .pin.ahora { background: var(--verde); width: 40px; height: 40px; font-size: 17px; border-width: 3px; }
+  .pop b { font-size: 15px; }
+  .pop button { margin-top: 8px; font: 700 15px system-ui, sans-serif; background: var(--azul); color: #fff; border: 0;
+                border-radius: 8px; padding: 8px 12px; cursor: pointer; }
+  #aviso { padding: 28px 16px; text-align: center; color: var(--suave); font-size: 18px; }
 </style>
 </head>
 <body>
-<div id="app">
-  <header><div><h1 id="titulo">Mapa de ruta</h1><small id="sub"></small></div>
-    <button id="yo" type="button">📍 Dónde estoy</button></header>
-  <div id="mapa"></div>
-  <div id="lista"><div id="aviso">Cargando el mapa...</div></div>
+<div class="cont">
+  <header><h1 id="titulo">Ruta del día</h1><small id="sub"></small></header>
+  <div id="actual"><div id="aviso">Cargando la ruta...</div></div>
+  <div id="resto" hidden>
+    <div class="seccion"><span>Mapa de todas las paradas</span><button id="yo" type="button">📍 Dónde estoy</button></div>
+    <div id="mapa"></div>
+    <div class="seccion"><span>Todas las paradas</span></div>
+    <div id="lista"></div>
+  </div>
 </div>
 <script>
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const b64u = s => b64(s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4));
-const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-function falla(msg) { document.getElementById("lista").innerHTML = '<div id="aviso">' + esc(msg) + "</div>"; }
+const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function falla(msg) { document.getElementById("actual").innerHTML = '<div id="aviso">' + esc(msg) + "</div>"; }
+// las ventanas "todo el día" no se resaltan: solo los horarios que hay que cumplir
+const conHorario = vh => vh && !/^\s*(06:00\s*-\s*23:59|SIN VH)\s*$/i.test(vh);
 
 async function inflar(bytes) {
   if (typeof DecompressionStream !== "undefined") {
@@ -69,62 +105,122 @@ async function inflar(bytes) {
 async function cargar() {
   const h = location.hash.slice(1);
   if (h.startsWith("z=")) {
-    // link de la app del celular: el mapa va comprimido dentro del link (no se guarda en ningun servidor)
+    // link de la app del celular: la ruta va comprimida dentro del link (no se guarda en ningun servidor)
     let d;
     try {
       d = JSON.parse(await inflar(b64u(h.slice(2))));
-    } catch (e) { return falla("El link no es correcto. Pide el link completo del mapa."); }
+    } catch (e) { return falla("El link no es correcto. Pide el link completo de la ruta."); }
     return pintar({ placa: d.p, fecha: d.f,
       puntos: d.d.map(([s, n, dir, dis, vh, la, lo]) => ({ s, n, d: dir, di: dis, vh, la, lo })) });
   }
-  // link de la app de la PC: el mapa esta cifrado en esta pagina y la clave va en el link
+  // link de la app de la PC: la ruta esta cifrada en esta pagina y la clave va en el link
   const id = new URLSearchParams(location.search).get("m");
   const clave = h;
-  if (!id || !clave) return falla("El link está incompleto. Pide el link completo del mapa.");
+  if (!id || !clave) return falla("El link está incompleto. Pide el link completo de la ruta.");
   const r = await fetch("m/" + encodeURIComponent(id) + ".json", { cache: "no-store" });
-  if (!r.ok) return falla("Este mapa todavía no está listo. Espera un minuto y vuelve a abrir el link.");
+  if (!r.ok) return falla("Esta ruta todavía no está lista. Espera un minuto y vuelve a abrir el link.");
   const sobre = await r.json();
   const k = await crypto.subtle.importKey("raw", b64u(clave), "AES-GCM", false, ["decrypt"]);
   let datos;
   try {
     const plano = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64(sobre.iv) }, k, b64(sobre.ct));
     datos = JSON.parse(new TextDecoder().decode(plano));
-  } catch (e) { return falla("El link no es correcto. Pide el link completo del mapa."); }
+  } catch (e) { return falla("El link no es correcto. Pide el link completo de la ruta."); }
   pintar(datos);
 }
 window.addEventListener("hashchange", () => location.reload());
+
+// en qué parada va el chofer: se recuerda en su teléfono (si vuelve a abrir el link sigue donde estaba)
+const clave = d => "ruta:" + d.placa + ":" + d.fecha + ":" + d.puntos.length;
+function leerAvance(d) { try { return Number(localStorage.getItem(clave(d))) || 0; } catch (e) { return 0; } }
+function guardarAvance(d, i) { try { localStorage.setItem(clave(d), String(i)); } catch (e) { /* sin memoria */ } }
+const irA = p => "https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=" + p.la + "," + p.lo;
 
 function pintar(d) {
   document.title = "Ruta " + d.placa + " " + d.fecha;
   document.getElementById("titulo").textContent = "Ruta " + d.placa;
   document.getElementById("sub").textContent = d.fecha + " · " + d.puntos.length + " paradas";
+  if (!d.puntos.length) return falla("Esta ruta no tiene paradas.");
+  document.getElementById("resto").hidden = false;
+  let i = Math.min(leerAvance(d), d.puntos.length - 1);
+
   const mapa = L.map("mapa", { zoomControl: true });
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, referrerPolicy: "strict-origin-when-cross-origin",
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }).addTo(mapa);
-  const marcas = [], lista = document.getElementById("lista");
-  lista.innerHTML = "";
-  d.puntos.forEach(p => {
-    const ir = "https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=" + p.la + "," + p.lo;
-    const html = "<b>" + p.s + " - " + esc(p.n) + "</b><br>" + esc(p.d) + (p.di ? " · " + esc(p.di) : "") +
-      (p.vh ? "<br>Horario: " + esc(p.vh) : "") + '<br><a class="ir" href="' + ir + '" target="_blank" rel="noopener">Cómo llegar</a>';
-    const m = L.marker([p.la, p.lo], { icon: L.divIcon({ className: "", html: '<div class="pin">' + p.s + "</div>",
-      iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -12] }) }).bindPopup(html, { autoPanPaddingTopLeft: [56, 12], autoPanPaddingBottomRight: [12, 12], maxWidth: 280 }).addTo(mapa);
+  const marcas = [], filas = [], lista = document.getElementById("lista");
+  d.puntos.forEach((p, k) => {
+    const m = L.marker([p.la, p.lo], { icon: icono(p, "") }).addTo(mapa);
+    m.bindPopup(() => {
+      const div = document.createElement("div");
+      div.className = "pop";
+      div.innerHTML = "<b>" + p.s + " - " + esc(p.n) + "</b><br>" + esc(p.d) + (p.di ? " · " + esc(p.di) : "") +
+        (conHorario(p.vh) ? "<br>Horario: " + esc(p.vh) : "");
+      const b = document.createElement("button");
+      b.textContent = "Ir a esta parada";
+      b.onclick = () => { mapa.closePopup(); elegir(k); };
+      div.appendChild(document.createElement("br"));
+      div.appendChild(b);
+      return div;
+    }, { autoPanPaddingTopLeft: [56, 12], autoPanPaddingBottomRight: [12, 12], maxWidth: 280 });
     marcas.push(m);
     const fila = document.createElement("div");
     fila.className = "parada";
     fila.innerHTML = '<div class="num">' + p.s + '</div><div class="info"><b>' + esc(p.n) + "</b><span>" +
-      esc(p.d) + (p.vh ? " · " + esc(p.vh) : "") + "</span></div>";
-    fila.onclick = () => { mapa.setView([p.la, p.lo], 17); m.openPopup(); };
+      esc(p.d) + (p.di ? " · " + esc(p.di) : "") + (conHorario(p.vh) ? " · ⏰ " + esc(p.vh) : "") + "</span></div>";
+    fila.onclick = () => elegir(k);
     lista.appendChild(fila);
+    filas.push(fila);
   });
-  if (marcas.length) mapa.fitBounds(L.featureGroup(marcas).getBounds(), { padding: [24, 24] });
+  mapa.fitBounds(L.featureGroup(marcas).getBounds(), { padding: [24, 24] });
+
+  function icono(p, estado) {
+    const g = estado === "ahora" ? 40 : 28;
+    return L.divIcon({ className: "", html: '<div class="pin ' + estado + '">' + p.s + "</div>",
+      iconSize: [g, g], iconAnchor: [g / 2, g / 2], popupAnchor: [0, -g / 2] });
+  }
+
+  function elegir(k) {
+    i = k;
+    guardarAvance(d, i);
+    mostrar(true);
+    window.scrollTo(0, 0);
+  }
+
+  function mostrar(centrar) {
+    const p = d.puntos[i];
+    const ultima = i === d.puntos.length - 1;
+    const caja = document.getElementById("actual");
+    caja.innerHTML =
+      '<div class="cuenta">Parada ' + (i + 1) + " de " + d.puntos.length + "</div>" +
+      '<div class="nombre">' + esc(p.n) + "</div>" +
+      '<div class="dir">' + esc(p.d) + (p.di ? ", " + esc(p.di) : "") + "</div>" +
+      (conHorario(p.vh) ? '<div class="hora">⏰ Atender de ' + esc(p.vh) + "</div>" : "") +
+      '<a class="ir" href="' + irA(p) + '" target="_blank" rel="noopener">🚗 IR CON GOOGLE MAPS</a>' +
+      '<div class="pasos"><button class="ant" type="button">◀ Anterior</button>' +
+      '<button class="sig" type="button">' + (ultima ? "Terminé ✔" : "Siguiente ▶") + "</button></div>";
+    const [ant, sig] = caja.querySelectorAll("button");
+    ant.disabled = i === 0;
+    ant.onclick = () => elegir(i - 1);
+    sig.onclick = () => {
+      if (!ultima) return elegir(i + 1);
+      guardarAvance(d, i);
+      caja.insertAdjacentHTML("beforeend", '<div class="fin">✔ Terminaste la ruta. ¡Buen trabajo!</div>');
+      sig.disabled = true;
+    };
+    marcas.forEach((m, k) => m.setIcon(icono(d.puntos[k], k === i ? "ahora" : k < i ? "hecha" : "")));
+    marcas[i].setZIndexOffset(1000);
+    filas.forEach((f, k) => { f.classList.toggle("ahora", k === i); f.classList.toggle("hecha", k < i); });
+    if (centrar) mapa.setView([p.la, p.lo], Math.max(mapa.getZoom(), 15));
+  }
+  mostrar();
+
   let yo = null;
   document.getElementById("yo").onclick = () => mapa.locate({ setView: true, maxZoom: 16 });
   mapa.on("locationfound", e => { if (yo) yo.remove(); yo = L.circleMarker(e.latlng, { radius: 8, color: "#fff",
     weight: 3, fillColor: "#1a73e8", fillOpacity: 1 }).addTo(mapa); });
   mapa.on("locationerror", () => alert("No pude ver tu ubicación. Activa el GPS y dale permiso al navegador."));
 }
-cargar().catch(e => falla("No pude abrir el mapa: " + e.message));
+cargar().catch(e => falla("No pude abrir la ruta: " + e.message));
 </script>
 </body>
 </html>
